@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#123552">
+  <meta name="description" content="Escáner en vivo para las etiquetas QR del Inventario Tecnológico UMN.">
+  <link rel="icon" type="image/png" sizes="128x128" href="favicon.png">
+  <title>Escáner QR · Inventario UMN</title>
+  <style>
+    :root{color-scheme:light;--navy:#123552;--navy-2:#194d6c;--orange:#f3931c;--ink:#23313b;--muted:#5d6e79;--line:#d8e1e6;--surface:#fff;--bg:#f2f6f8;--red:#a33b35;--green:#23774b;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at top right,#dfeaf0 0,transparent 42%),var(--bg);color:var(--ink);display:flex;flex-direction:column}header{background:linear-gradient(115deg,#10344d,#1e5b78);color:#fff;padding:18px max(20px,env(safe-area-inset-left));display:flex;align-items:center;gap:13px;box-shadow:0 8px 22px #153d5524}.brand-icon{width:46px;height:46px;object-fit:contain;background:#ffffff18;border:1px solid #ffffff55;border-radius:14px;padding:2px}.brand-title{font-size:15px;font-weight:800;letter-spacing:.02em}.brand-caption{font-size:12px;color:#dce8ef;margin-top:3px}main{width:min(100% - 28px,560px);margin:clamp(22px,6vh,56px) auto 28px;flex:1}.card{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:clamp(18px,5vw,30px);box-shadow:0 18px 50px #173e5512}.eyebrow{color:#8a581f;font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase}h1{font-size:clamp(24px,6vw,32px);line-height:1.15;margin:7px 0 8px;color:var(--navy)}.intro{color:var(--muted);font-size:14px;line-height:1.55;margin:0 0 19px}.camera-frame{position:relative;overflow:hidden;min-height:260px;aspect-ratio:4/3;background:#111c24;border-radius:17px;border:1px solid #172b39;display:grid;place-items:center}.camera-frame video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.camera-placeholder{max-width:290px;padding:20px;text-align:center;color:#e4edf3;font-size:13px;line-height:1.5}.scan-target{position:absolute;inset:15%;border:2px solid #f7a52b;border-radius:17px;box-shadow:0 0 0 100vmax #0717231c;pointer-events:none}.status{margin:15px 0 0;min-height:42px;color:var(--muted);font-size:13px;line-height:1.5}.status[data-state="error"]{color:var(--red)}.status[data-state="success"]{color:var(--green);font-weight:700}.actions{display:flex;gap:10px;margin-top:16px}.button{appearance:none;border:0;border-radius:13px;min-height:48px;padding:0 18px;font:inherit;font-size:14px;font-weight:750;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,background .16s ease}.button:focus-visible{outline:3px solid #f3a12d;outline-offset:3px}.button:active{transform:scale(.98)}.button-primary{flex:1;color:#fff;background:linear-gradient(135deg,#e48a20,#f3a533);box-shadow:0 7px 16px #a95e1e2b}.button-secondary{color:var(--navy);background:#edf3f6;border:1px solid #d5e0e6}.button[hidden]{display:none}.privacy{margin:18px 2px 0;color:#637580;font-size:11px;line-height:1.5}footer{text-align:center;color:#73838d;font-size:11px;padding:14px 20px max(18px,env(safe-area-inset-bottom))}footer a{color:var(--navy);font-weight:700;text-decoration:none}footer a:hover{text-decoration:underline}@media(max-width:420px){header{padding-top:14px;padding-bottom:14px}.brand-icon{width:42px;height:42px}.camera-frame{min-height:230px}.actions{flex-direction:column}.button{width:100%}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;scroll-behavior:auto!important}}
+  </style>
+  <script src="jsQR.js" defer></script>
+  <script defer>
+    const INVENTORY_URL='https://script.google.com/macros/s/AKfycby4TqHaV0mmO_aHFUUh8pM_V8SZ-UfeBGcCnOGao8joyssmthkiGxdPoYtLG6OT5Rlx/exec';
+    let stream=null,scanActive=false,lastFrameAt=0,redirecting=false;
+    const video=()=>document.getElementById('cameraVideo');
+    const message=()=>document.getElementById('cameraStatus');
+    const startButton=()=>document.getElementById('startCamera');
+    const stopButton=()=>document.getElementById('stopCamera');
+    function setMessage(text,state='info'){message().textContent=text;message().dataset.state=state;}
+    function stopCamera(updateMessage=true){scanActive=false;if(stream){stream.getTracks().forEach(track=>track.stop());stream=null;}if(video())video().srcObject=null;startButton().hidden=false;stopButton().hidden=true;if(updateMessage)setMessage('Cámara apagada. Cuando quieras, pulsa “Activar cámara” para volver a escanear.');}
+    function cameraError(error){if(error&&error.name==='NotAllowedError')return'No se concedió permiso de cámara. Permite la cámara para esta página y vuelve a intentarlo.';if(error&&error.name==='NotFoundError')return'Este dispositivo no encontró una cámara disponible.';if(error&&error.name==='NotReadableError')return'La cámara está ocupada por otra aplicación. Ciérrala y vuelve a intentarlo.';return'No se pudo activar la cámara. Comprueba el permiso del navegador e inténtalo otra vez.';}
+    async function startCamera(){
+      if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){setMessage('Este navegador no puede abrir la cámara en esta página. Abre el enlace HTTPS en Safari o Chrome actualizados.','error');return;}
+      if(typeof window.jsQR!=='function'){setMessage('El lector QR no cargó. Recarga la página e inténtalo de nuevo.','error');return;}
+      startButton().disabled=true;setMessage('Solicitando permiso para usar la cámara…');
+      try{
+        stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+        const v=video();v.srcObject=stream;await v.play();scanActive=true;startButton().hidden=true;stopButton().hidden=false;setMessage('Cámara activa. Centra el QR dentro del recuadro; se leerá automáticamente.');requestAnimationFrame(scanFrame);
+      }catch(error){stopCamera(false);setMessage(cameraError(error),'error');}
+      finally{startButton().disabled=false;}
+    }
+    function getPayloadFromFrame(v){
+      const canvas=document.getElementById('scanCanvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
+      const width=v.videoWidth,height=v.videoHeight;if(!width||!height)return null;
+      const scale=Math.min(1,1100/Math.max(width,height));canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);ctx.drawImage(v,0,0,canvas.width,canvas.height);
+      let result=window.jsQR(ctx.getImageData(0,0,canvas.width,canvas.height).data,canvas.width,canvas.height,{inversionAttempts:'attemptBoth'});
+      if(!result&&canvas.width>280&&canvas.height>280){const cropW=Math.round(canvas.width*.62),cropH=Math.round(canvas.height*.62),sx=Math.round((canvas.width-cropW)/2),sy=Math.round((canvas.height-cropH)/2);const pixels=ctx.getImageData(sx,sy,cropW,cropH);result=window.jsQR(pixels.data,cropW,cropH,{inversionAttempts:'attemptBoth'});}
+      return result&&result.data||null;
+    }
+    function assetIdFromPayload(raw){
+      let value=String(raw||'').trim();
+      if(/^https?:\/\//i.test(value)){
+        try{const parsed=new URL(value);if(parsed.protocol!=='https:'||parsed.hostname!=='script.google.com'||!/^\/macros\/s\/[^/]+\/exec$/.test(parsed.pathname))return'';value=parsed.searchParams.get('id')||parsed.searchParams.get('assetId')||'';}catch(error){return'';}
+      }
+      return/^[A-Za-z0-9._-]{1,100}$/.test(value)?value:'';
+    }
+    function scanFrame(now){
+      if(!scanActive||redirecting)return;
+      if(now-lastFrameAt>180&&video().readyState>=HTMLMediaElement.HAVE_CURRENT_DATA){lastFrameAt=now;try{const payload=getPayloadFromFrame(video());if(payload){const id=assetIdFromPayload(payload);if(!id){setMessage('El QR no contiene un ID válido del inventario UMN.','error');}else{redirecting=true;setMessage('QR leído: '+id+'. Abriendo su ficha…','success');if(navigator.vibrate)navigator.vibrate(90);stopCamera(false);const target=new URL(INVENTORY_URL);target.searchParams.set('id',id);window.location.replace(target.href);return;}}}catch(error){setMessage('No se pudo procesar el video de la cámara.','error');}}
+      requestAnimationFrame(scanFrame);
+    }
+    document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopCamera(false);});
+    window.addEventListener('pagehide',()=>stopCamera(false));
+  </script>
+</head>
+<body>
+  <header><img class="brand-icon" src="favicon.png" alt=""><div><div class="brand-title">UNIÓN MEXICANA DEL NORTE</div><div class="brand-caption">Inventario tecnológico · Escáner QR</div></div></header>
+  <main><section class="card" aria-labelledby="title"><div class="eyebrow">Acceso rápido</div><h1 id="title">Escanea una etiqueta</h1><p class="intro">Activa la cámara y apunta al QR del dispositivo. Al leerlo, se abrirá su ficha en el inventario; necesitarás una cuenta autorizada.</p>
+    <div class="camera-frame"><video id="cameraVideo" autoplay muted playsinline aria-label="Vista en vivo de la cámara"></video><div class="camera-placeholder" id="cameraPlaceholder">La cámara permanecerá apagada hasta que pulses el botón.<br><br>Centra el QR en el recuadro naranja.</div><div class="scan-target" aria-hidden="true"></div><canvas id="scanCanvas" hidden></canvas></div>
+    <p class="status" id="cameraStatus" role="status" aria-live="polite" data-state="info">Listo. La cámara está apagada.</p>
+    <div class="actions"><button class="button button-primary" id="startCamera" type="button" onclick="startCamera()">Activar cámara</button><button class="button button-secondary" id="stopCamera" type="button" onclick="stopCamera()" hidden>Apagar cámara</button></div>
+    <p class="privacy">El video se procesa en este dispositivo para detectar el QR. No se graba ni se envía a un servidor. Solo se abre el enlace de la ficha cuando se reconoce el código.</p>
+  </section></main>
+  <footer><a href="https://script.google.com/macros/s/AKfycby4TqHaV0mmO_aHFUUh8pM_V8SZ-UfeBGcCnOGao8joyssmthkiGxdPoYtLG6OT5Rlx/exec" target="_self">Volver al inventario</a></footer>
+</body>
+</html>
