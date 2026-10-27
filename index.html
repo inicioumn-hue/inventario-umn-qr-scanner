@@ -14,25 +14,52 @@
   <script src="jsQR.js" defer></script>
   <script defer>
     const INVENTORY_URL='https://script.google.com/macros/s/AKfycby4TqHaV0mmO_aHFUUh8pM_V8SZ-UfeBGcCnOGao8joyssmthkiGxdPoYtLG6OT5Rlx/exec';
-    let stream=null,scanActive=false,lastFrameAt=0,redirecting=false,cameraRequestPending=false;
+    const REQUESTED_FIELD=(new URLSearchParams(location.search).get('field')||'').trim().slice(0,120);
+    let stream=null,scanActive=false,lastFrameAt=0,redirecting=false,cameraRequestPending=false,cameraGeneration=0;
     const video=()=>document.getElementById('cameraVideo');
     const message=()=>document.getElementById('cameraStatus');
     const cameraPlaceholder=()=>document.getElementById('cameraPlaceholder');
     const startButton=()=>document.getElementById('startCamera');
     const stopButton=()=>document.getElementById('stopCamera');
     function setMessage(text,state='info'){message().textContent=text;message().dataset.state=state;}
-    function stopCamera(updateMessage=true){scanActive=false;if(stream){stream.getTracks().forEach(track=>track.stop());stream=null;}if(video())video().srcObject=null;if(cameraPlaceholder())cameraPlaceholder().hidden=false;startButton().hidden=false;startButton().textContent='Reintentar cámara';stopButton().hidden=true;if(updateMessage)setMessage('Cámara apagada. Pulsa “Reintentar cámara” para volver a escanear.');}
-    function cameraError(error){if(error&&(error.name==='NotAllowedError'||error.name==='SecurityError'))return'No se pudo obtener permiso para la cámara. Puedes volver a intentarlo con el botón; si el navegador ya tenía una decisión guardada, permite la cámara para este sitio y recarga la página.';if(error&&error.name==='NotFoundError')return'Este dispositivo no encontró una cámara disponible.';if(error&&error.name==='NotReadableError')return'La cámara está ocupada por otra aplicación. Ciérrala y vuelve a intentarlo.';return'No se pudo activar la cámara. Vuelve a intentarlo.';}
+    function stopCamera(updateMessage=true){
+      cameraGeneration++;cameraRequestPending=false;scanActive=false;
+      if(stream){stream.getTracks().forEach(track=>track.stop());stream=null;}
+      if(video()){video().pause();video().srcObject=null;}
+      if(cameraPlaceholder())cameraPlaceholder().hidden=false;
+      startButton().hidden=false;startButton().disabled=false;startButton().textContent='Reintentar cámara';
+      stopButton().hidden=true;
+      if(updateMessage)setMessage('Cámara apagada. Pulsa “Reintentar cámara” para volver a escanear.');
+    }
+    function cameraError(error){
+      if(error&&(error.name==='NotAllowedError'||error.name==='SecurityError'))return'El navegador bloqueó el permiso de cámara. Pulsa “Reintentar cámara”. Si ya lo habías bloqueado, cambia el permiso de cámara de este sitio a “Permitir” en los ajustes del navegador.';
+      if(error&&error.name==='NotFoundError')return'Este dispositivo no encontró una cámara disponible.';
+      if(error&&error.name==='NotReadableError')return'La cámara está ocupada por otra aplicación. Ciérrala y vuelve a intentarlo.';
+      return'No se pudo activar la cámara. Pulsa “Reintentar cámara” para intentarlo otra vez.';
+    }
     async function startCamera(){
       if(cameraRequestPending||stream||scanActive)return;
       if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){setMessage('Este navegador no puede abrir la cámara en esta página. Abre el enlace HTTPS en Safari o Chrome actualizados.','error');return;}
       if(typeof window.jsQR!=='function'){setMessage('El lector QR no cargó. Recarga la página e inténtalo de nuevo.','error');return;}
+      const attempt=++cameraGeneration;
+      redirecting=false;lastFrameAt=0;
       cameraRequestPending=true;startButton().disabled=true;startButton().textContent='Solicitando permiso…';setMessage('Solicitando permiso de cámara…');
+      let candidate=null;
       try{
-        stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
-        const v=video();v.srcObject=stream;await v.play();cameraPlaceholder().hidden=true;scanActive=true;startButton().hidden=true;stopButton().hidden=false;setMessage('Cámara activa. Centra el QR dentro del recuadro; se leerá automáticamente.');requestAnimationFrame(scanFrame);
-      }catch(error){stopCamera(false);setMessage(cameraError(error),'error');}
-      finally{cameraRequestPending=false;startButton().disabled=false;if(!stream)startButton().textContent='Reintentar cámara';}
+        candidate=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+        if(attempt!==cameraGeneration){candidate.getTracks().forEach(track=>track.stop());return;}
+        stream=candidate;
+        candidate.getVideoTracks().forEach(track=>track.addEventListener('ended',()=>{if(stream===candidate&&!redirecting)stopCamera(true);},{once:true}));
+        const v=video();v.srcObject=candidate;await v.play();
+        if(attempt!==cameraGeneration||stream!==candidate){candidate.getTracks().forEach(track=>track.stop());return;}
+        cameraPlaceholder().hidden=true;scanActive=true;startButton().hidden=true;stopButton().hidden=false;
+        setMessage('Cámara activa. Centra el QR dentro del recuadro; se leerá automáticamente.');requestAnimationFrame(scanFrame);
+      }catch(error){
+        if(attempt!==cameraGeneration)return;
+        stopCamera(false);setMessage(cameraError(error),'error');
+      }finally{
+        if(attempt===cameraGeneration){cameraRequestPending=false;startButton().disabled=false;if(!stream)startButton().textContent='Reintentar cámara';}
+      }
     }
     function getPayloadFromFrame(v){
       const canvas=document.getElementById('scanCanvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
@@ -51,7 +78,7 @@
     }
     function scanFrame(now){
       if(!scanActive||redirecting)return;
-      if(now-lastFrameAt>180&&video().readyState>=HTMLMediaElement.HAVE_CURRENT_DATA){lastFrameAt=now;try{const payload=getPayloadFromFrame(video());if(payload){const id=assetIdFromPayload(payload);if(!id){setMessage('El QR no contiene un ID válido del inventario UMN.','error');}else{redirecting=true;setMessage('QR leído: '+id+'. Abriendo su ficha…','success');if(navigator.vibrate)navigator.vibrate(90);stopCamera(false);const target=new URL(INVENTORY_URL);target.searchParams.set('id',id);window.location.replace(target.href);return;}}}catch(error){setMessage('No se pudo procesar el video de la cámara.','error');}}
+      if(now-lastFrameAt>180&&video().readyState>=HTMLMediaElement.HAVE_CURRENT_DATA){lastFrameAt=now;try{const payload=getPayloadFromFrame(video());if(payload){const id=assetIdFromPayload(payload);if(!id){setMessage('El QR no contiene un ID válido del inventario UMN.','error');}else{redirecting=true;setMessage('QR leído: '+id+'. Abriendo su ficha…','success');if(navigator.vibrate)navigator.vibrate(90);stopCamera(false);const target=new URL(INVENTORY_URL);target.searchParams.set('id',id);if(REQUESTED_FIELD)target.searchParams.set('field',REQUESTED_FIELD);window.location.replace(target.href);return;}}}catch(error){setMessage('No se pudo procesar el video de la cámara.','error');}}
       requestAnimationFrame(scanFrame);
     }
     document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopCamera(true);});
