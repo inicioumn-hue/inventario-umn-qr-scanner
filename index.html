@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#123552">
   <meta name="description" content="Escáner en vivo para las etiquetas QR del Inventario Tecnológico UMN.">
-  <link rel="icon" type="image/png" sizes="128x128" href="favicon.png">
+  <link rel="icon" type="image/png" sizes="128x128" href="favicon-umn-v2.png">
   <title>Escáner QR · Inventario UMN</title>
   <style>
     :root{color-scheme:light;--navy:#123552;--navy-2:#194d6c;--orange:#f3931c;--ink:#23313b;--muted:#5d6e79;--line:#d8e1e6;--surface:#fff;--bg:#f2f6f8;--red:#a33b35;--green:#23774b;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -20,12 +20,12 @@
     const startButton=()=>document.getElementById('startCamera');
     const stopButton=()=>document.getElementById('stopCamera');
     function setMessage(text,state='info'){message().textContent=text;message().dataset.state=state;}
-    function stopCamera(updateMessage=true){scanActive=false;if(stream){stream.getTracks().forEach(track=>track.stop());stream=null;}if(video())video().srcObject=null;startButton().hidden=false;stopButton().hidden=true;if(updateMessage)setMessage('Cámara apagada. Cuando quieras, pulsa “Activar cámara” para volver a escanear.');}
-    function cameraError(error){if(error&&error.name==='NotAllowedError')return'No se concedió permiso de cámara. Permite la cámara para esta página y vuelve a intentarlo.';if(error&&error.name==='NotFoundError')return'Este dispositivo no encontró una cámara disponible.';if(error&&error.name==='NotReadableError')return'La cámara está ocupada por otra aplicación. Ciérrala y vuelve a intentarlo.';return'No se pudo activar la cámara. Comprueba el permiso del navegador e inténtalo otra vez.';}
+    function stopCamera(updateMessage=true){scanActive=false;if(stream){stream.getTracks().forEach(track=>track.stop());stream=null;}if(video())video().srcObject=null;startButton().hidden=false;stopButton().hidden=true;if(updateMessage)setMessage('Cámara apagada. Pulsa “Permitir cámara y comenzar” para volver a escanear.');}
+    function cameraError(error){if(error&&(error.name==='NotAllowedError'||error.name==='SecurityError'))return'El navegador no concedió el permiso de cámara. Permite Cámara para este sitio en los ajustes del navegador y, si hace falta, para el navegador en Ajustes del dispositivo. Después recarga esta página y vuelve a intentarlo.';if(error&&error.name==='NotFoundError')return'Este dispositivo no encontró una cámara disponible.';if(error&&error.name==='NotReadableError')return'La cámara está ocupada por otra aplicación. Ciérrala y vuelve a intentarlo.';return'No se pudo activar la cámara. Revisa el permiso de este sitio y vuelve a intentarlo.';}
     async function startCamera(){
       if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){setMessage('Este navegador no puede abrir la cámara en esta página. Abre el enlace HTTPS en Safari o Chrome actualizados.','error');return;}
       if(typeof window.jsQR!=='function'){setMessage('El lector QR no cargó. Recarga la página e inténtalo de nuevo.','error');return;}
-      startButton().disabled=true;setMessage('Solicitando permiso para usar la cámara…');
+      startButton().disabled=true;setMessage('Solicitando permiso de cámara. Si el navegador pregunta, toca “Permitir”.');
       try{
         stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
         const v=video();v.srcObject=stream;await v.play();scanActive=true;startButton().hidden=true;stopButton().hidden=false;setMessage('Cámara activa. Centra el QR dentro del recuadro; se leerá automáticamente.');requestAnimationFrame(scanFrame);
@@ -57,11 +57,11 @@
   </script>
 </head>
 <body>
-  <header><img class="brand-icon" src="favicon.png" alt=""><div><div class="brand-title">UNIÓN MEXICANA DEL NORTE</div><div class="brand-caption">Inventario tecnológico · Escáner QR</div></div></header>
-  <main><section class="card" aria-labelledby="title"><div class="eyebrow">Acceso rápido</div><h1 id="title">Escanea una etiqueta</h1><p class="intro">Activa la cámara y apunta al QR del dispositivo. Al leerlo, se abrirá su ficha en el inventario; necesitarás una cuenta autorizada.</p>
+  <header><img class="brand-icon" src="favicon-umn-v2.png" alt=""><div><div class="brand-title">UNIÓN MEXICANA DEL NORTE</div><div class="brand-caption">Inventario tecnológico · Escáner QR</div></div></header>
+  <main><section class="card" aria-labelledby="title"><div class="eyebrow">Acceso rápido</div><h1 id="title">Escanea una etiqueta</h1><p class="intro">Pulsa el botón y el navegador te pedirá permiso antes de activar la cámara. La cámara no se enciende hasta que lo concedas. Al leer el QR, se abrirá la ficha del dispositivo; necesitarás una cuenta autorizada.</p>
     <div class="camera-frame"><video id="cameraVideo" autoplay muted playsinline aria-label="Vista en vivo de la cámara"></video><div class="camera-placeholder" id="cameraPlaceholder">La cámara permanecerá apagada hasta que pulses el botón.<br><br>Centra el QR en el recuadro naranja.</div><div class="scan-target" aria-hidden="true"></div><canvas id="scanCanvas" hidden></canvas></div>
-    <p class="status" id="cameraStatus" role="status" aria-live="polite" data-state="info">Listo. La cámara está apagada.</p>
-    <div class="actions"><button class="button button-primary" id="startCamera" type="button" onclick="startCamera()">Activar cámara</button><button class="button button-secondary" id="stopCamera" type="button" onclick="stopCamera()" hidden>Apagar cámara</button></div>
+    <p class="status" id="cameraStatus" role="status" aria-live="polite" data-state="info">Listo. Al tocar el botón, el navegador pedirá permiso antes de activar la cámara.</p>
+    <div class="actions"><button class="button button-primary" id="startCamera" type="button" onclick="startCamera()">Permitir cámara y comenzar</button><button class="button button-secondary" id="stopCamera" type="button" onclick="stopCamera()" hidden>Apagar cámara</button></div>
     <p class="privacy">El video se procesa en este dispositivo para detectar el QR. No se graba ni se envía a un servidor. Solo se abre el enlace de la ficha cuando se reconoce el código.</p>
   </section></main>
   <footer><a href="https://script.google.com/macros/s/AKfycby4TqHaV0mmO_aHFUUh8pM_V8SZ-UfeBGcCnOGao8joyssmthkiGxdPoYtLG6OT5Rlx/exec" target="_self">Volver al inventario</a></footer>
