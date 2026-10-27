@@ -69,16 +69,17 @@
       if(!result&&canvas.width>280&&canvas.height>280){const cropW=Math.round(canvas.width*.62),cropH=Math.round(canvas.height*.62),sx=Math.round((canvas.width-cropW)/2),sy=Math.round((canvas.height-cropH)/2);const pixels=ctx.getImageData(sx,sy,cropW,cropH);result=window.jsQR(pixels.data,cropW,cropH,{inversionAttempts:'attemptBoth'});}
       return result&&result.data||null;
     }
-    function assetIdFromPayload(raw){
+    function assetInfoFromPayload(raw){
       let value=String(raw||'').trim();
+      let field='';
       if(/^https?:\/\//i.test(value)){
-        try{const parsed=new URL(value);if(parsed.protocol!=='https:'||parsed.hostname!=='script.google.com'||!/^\/macros\/s\/[^/]+\/exec$/.test(parsed.pathname))return'';value=parsed.searchParams.get('id')||parsed.searchParams.get('assetId')||'';}catch(error){return'';}
+        try{const parsed=new URL(value);if(parsed.protocol!=='https:'||parsed.hostname!=='script.google.com'||!/^\/macros\/s\/[^/]+\/exec$/.test(parsed.pathname))return null;field=String(parsed.searchParams.get('field')||'').trim().slice(0,120);value=parsed.searchParams.get('id')||parsed.searchParams.get('assetId')||'';}catch(error){return null;}
       }
-      return/^[A-Za-z0-9._-]{1,100}$/.test(value)?value:'';
+      return/^[A-Za-z0-9._-]{1,100}$/.test(value)?{id:value,field:field}:null;
     }
     function scanFrame(now){
       if(!scanActive||redirecting)return;
-      if(now-lastFrameAt>180&&video().readyState>=HTMLMediaElement.HAVE_CURRENT_DATA){lastFrameAt=now;try{const payload=getPayloadFromFrame(video());if(payload){const id=assetIdFromPayload(payload);if(!id){setMessage('El QR no contiene un ID válido del inventario UMN.','error');}else{redirecting=true;setMessage('QR leído: '+id+'. Abriendo su ficha…','success');if(navigator.vibrate)navigator.vibrate(90);stopCamera(false);const target=new URL(INVENTORY_URL);target.searchParams.set('id',id);if(REQUESTED_FIELD)target.searchParams.set('field',REQUESTED_FIELD);window.location.replace(target.href);return;}}}catch(error){setMessage('No se pudo procesar el video de la cámara.','error');}}
+      if(now-lastFrameAt>180&&video().readyState>=HTMLMediaElement.HAVE_CURRENT_DATA){lastFrameAt=now;try{const payload=getPayloadFromFrame(video());if(payload){const asset=assetInfoFromPayload(payload);if(!asset){setMessage('El QR no contiene un ID válido del inventario UMN.','error');}else{redirecting=true;setMessage('QR leído: '+asset.id+'. Abriendo su ficha…','success');if(navigator.vibrate)navigator.vibrate(90);stopCamera(false);const target=new URL(INVENTORY_URL);target.searchParams.set('id',asset.id);const field=asset.field||REQUESTED_FIELD;if(field)target.searchParams.set('field',field);window.location.replace(target.href);return;}}}catch(error){setMessage('No se pudo procesar el video de la cámara.','error');}}
       requestAnimationFrame(scanFrame);
     }
     document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopCamera(true);});
